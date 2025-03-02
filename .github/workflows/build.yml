@@ -1,0 +1,62 @@
+name: Build Windows QEMU
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      QEMU_TAG: "v9.2.2"
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+
+      - name: Install Dependencies
+        shell: msys2 {0}
+        run: |
+          pacman -S --needed --noconfirm mingw-w64-x86_64-toolchain git zip autoconf automake pkg-config mingw-w64-x86_64-glib2 mingw-w64-x86_64-pixman mingw-w64-x86_64-fdt mingw-w64-x86_64-SDL2 mingw-w64-x86_64-libslirp python ninja python-setuptools
+
+      - name: Clone QEMU Source and Checkout Specified Tag
+        shell: msys2 {0}
+        run: |
+          git clone https://git.qemu.org/git/qemu.git
+          cd qemu
+          git checkout "${QEMU_TAG}"
+
+      - name: Update Submodules
+        shell: msys2 {0}
+        run: |
+          cd qemu
+          git submodule update --init --recursive
+
+      - name: Configure Build for Windows QEMU
+        shell: msys2 {0}
+        run: |
+          cd qemu
+          ./configure --enable-sdl --target-list=aarch64-softmmu,x86_64-softmmu --disable-avx2 --disable-avx512bw --disable-cloop --disable-curses --disable-docs --disable-dsound --disable-gtk --disable-opengl --disable-parallels --disable-pixman --disable-png --disable-qcow1 --disable-qed --disable-replication --disable-slirp --disable-tools --disable-vnc --disable-vpc --disable-zstd --static --extra-ldflags=-liconv
+
+      - name: Build QEMU
+        shell: msys2 {0}
+        run: |
+          cd qemu
+          make -j$(nproc)
+
+      - name: Package Build Results
+        shell: msys2 {0}
+        run: |
+          cd qemu
+          zip -r ../qemu-windows.zip qemu-system-*.exe
+
+      - name: Publish to GitHub Releases
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ env.QEMU_TAG }}
+          name: "QEMU Windows Release ${{ env.QEMU_TAG }}"
+          files: qemu-windows.zip
